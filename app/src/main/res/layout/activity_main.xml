@@ -1,18 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<android.support.constraint.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    tools:context="com.samirsarosh.renderthought.pictures.MainActivity">
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="START"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintLeft_toLeftOf="parent"
-        app:layout_constraintRight_toRightOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+    <data>
+        <!--<import type="android.util.SparseArray"/>-->
+        <!--<import type="java.util.Map"/>-->
+        <!--<import type="java.util.List"/>-->
+        <!--<variable name="list" type="List<String>"/>-->
+        <!--<variable name="sparse" type="SparseArray<String>"/>-->
+        <!--<variable name="map" type="Map<String, String>"/>-->
+        <!--<variable name="index" type="int"/>-->
+        <variable name="picture" type="com.samirsarosh.renderthought.data.Picture"/>
+    </data>
 
-</android.support.constraint.ConstraintLayout>
+    <android.support.constraint.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="@dimen/activity_horizontal_margin"
+        tools:context="com.samirsarosh.renderthought.pictures.MainActivity">
+
+        <ImageView
+            android:id="@+id/thumbnail"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:background="@color/colorAccent"
+            app:layout_constraintLeft_toLeftOf="parent"
+            app:layout_constraintTop_toTopOf="parent"/>
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{picture.title}"
+            android:layout_marginLeft="@dimen/activity_horizontal_margin"
+            app:layout_constraintLeft_toRightOf="@+id/thumbnail" />
+
+    </android.support.constraint.ConstraintLayout>
+</layout>
+

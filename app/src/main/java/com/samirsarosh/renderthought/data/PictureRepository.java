@@ -36,8 +36,8 @@ public class PictureRepository {
                 .build();
 
         this.webservice = retrofit.create(Webservice.class);
-        this.pictureDao = pictureDao;
-        this.executor = executor;
+//        this.pictureDao = pictureDao;
+//        this.executor = executor;
     }
 
     public LiveData<List<Picture>> getPictures() {
