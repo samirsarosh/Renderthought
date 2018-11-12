@@ -27,6 +27,7 @@ public class PictureRepository {
     private Executor executor;
 
     public PictureRepository() {
+        //TODO: Inject via Dagger 2
         OkHttpClient okHttpClient = new OkHttpClient.Builder().build();
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(ApiConstants.ENDPOINT)
@@ -35,8 +36,8 @@ public class PictureRepository {
                 .build();
 
         this.webservice = retrofit.create(Webservice.class);
-//        this.pictureDao = pictureDao;
-//        this.executor = executor;
+        this.pictureDao = pictureDao;
+        this.executor = executor;
     }
 
     public LiveData<List<Picture>> getPictures() {
