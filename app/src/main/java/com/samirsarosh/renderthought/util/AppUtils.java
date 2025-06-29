@@ -8,64 +8,71 @@ public class AppUtils {
 }
 
 
-class SpringFloatAnimator(
-    startValue: Float,
-    private val endValue: Float,
+interface SpringAnimationController {
+    fun start()
+    fun cancel()
+    fun isRunning(): Boolean
+    fun getValue(): Float
+    fun addEndListener(listener: () -> Unit)
+    fun addUpdateListener(listener: (Float) -> Unit)
+}
+
+
+class SpringPhysicsAnimator(
+    private val from: Float,
+    private val to: Float,
     stiffness: Float = SpringForce.STIFFNESS_MEDIUM,
     damping: Float = SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY,
-    private val onUpdate: (Float) -> Unit,
-    private val onEnd: (() -> Unit)? = null,
-) {
-    private val valueHolder = FloatValueHolder(startValue)
-    private val spring = SpringAnimation(valueHolder).apply {
-        spring = SpringForce(endValue).apply {
+    private val initialVelocity: Float = 0f
+) : SpringAnimationController {
+
+    private val valueHolder = FloatValueHolder(from)
+    private val springAnim = SpringAnimation(valueHolder).apply {
+        spring = SpringForce(to).apply {
             this.stiffness = stiffness
             this.dampingRatio = damping
         }
-        addUpdateListener { _, value, _ -> onUpdate(value) }
-        addEndListener { _, _, _, _ -> onEnd?.invoke() }
+        setStartVelocity(initialVelocity)
     }
 
-    fun start() = spring.start()
-    fun cancel() = spring.cancel()
-    fun isRunning(): Boolean = spring.isRunning
+    private val endListeners = mutableListOf<() -> Unit>()
+    private val updateListeners = mutableListOf<(Float) -> Unit>()
+    private var isRunning = false
+
+    init {
+        springAnim.addUpdateListener { _, value, _ ->
+            updateListeners.forEach { it(value) }
+        }
+        springAnim.addEndListener { _, _, _, _ ->
+            isRunning = false
+            endListeners.forEach { it() }
+        }
+    }
+
+    override fun start() {
+        if (isRunning) return
+        isRunning = true
+        springAnim.start()
+    }
+
+    override fun cancel() {
+        springAnim.cancel()
+        isRunning = false
+    }
+
+    override fun isRunning(): Boolean = isRunning
+
+    override fun getValue(): Float = valueHolder.value
+
+    override fun addEndListener(listener: () -> Unit) {
+        endListeners.add(listener)
+    }
+
+    override fun addUpdateListener(listener: (Float) -> Unit) {
+        updateListeners.add(listener)
+    }
 }
 
 
 
-
-
-
-
-
-fun createSpringAnimator(
-    from: Float,
-    to: Float,
-    onUpdate: (Float) -> Unit,
-    onEnd: () -> Unit = {}
-): Animator {
-    val valueHolder = FloatValueHolder(from)
-    val springAnim = SpringAnimation(valueHolder).apply {
-        spring = SpringForce(to).apply {
-            dampingRatio = SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY
-            stiffness = SpringForce.STIFFNESS_LOW
-        }
-        addUpdateListener { _, value, _ -> onUpdate(value) }
-        addEndListener { _, _, _, _ -> onEnd() }
-    }
-
-    return object : Animator() {
-        override fun start() = springAnim.start()
-        override fun cancel() = springAnim.cancel()
-        override fun isRunning() = springAnim.isRunning
-
-        override fun addListener(listener: Animator.AnimatorListener?) {
-            // Optional — map SpringAnimation events
-        }
-
-        override fun removeListener(listener: Animator.AnimatorListener?) {}
-    }
-}
-          
-          
 
