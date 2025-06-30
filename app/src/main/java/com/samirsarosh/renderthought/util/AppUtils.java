@@ -1,5 +1,28 @@
 package com.samirsarosh.renderthought.util;
 
+override fun start() {
+    if (isRunningInternal) return
+
+    val startSpring = {
+        springAnim.cancel()
+        valueHolder.value = from
+        springAnim.spring.finalPosition = to
+        springAnim.setStartVelocity(initialVelocity)
+
+        isRunningInternal = true
+        notifyStart()
+        springAnim.start()
+    }
+
+    if (startDelayMs > 0) {
+        Handler(Looper.getMainLooper()).postDelayed(startSpring, startDelayMs)
+    } else {
+        startSpring()
+    }
+}
+
+
+
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
