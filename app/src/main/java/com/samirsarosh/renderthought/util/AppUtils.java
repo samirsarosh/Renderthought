@@ -1,12 +1,11 @@
 import android.animation.Animator import android.animation.TimeInterpolator import android.animation.ValueAnimator import android.view.Choreographer import android.view.animation.Interpolator import androidx.dynamicanimation.animation.FloatValueHolder import androidx.dynamicanimation.animation.SpringAnimation import androidx.dynamicanimation.animation.SpringForce
 
-// --- Strategy interface --- interface SpringStrategy { fun start() fun cancel() fun isRunning(): Boolean fun getAnimatedValue(): Float fun addListener(listener: Animator.AnimatorListener) fun removeListener(listener: Animator.AnimatorListener) }
+// --- Strategy interface --- interface SpringStrategy { fun start() fun cancel() fun isRunning(): Boolean fun getAnimatedValue(): Float }
 
-// --- Physics-based spring strategy --- class PhysicsSpringStrategy( private val from: Float, private val to: Float, dampingRatio: Float, stiffness: Float, private val initialVelocity: Float, private val startDelay: Long, private val onUpdate: (() -> Unit)? ) : SpringStrategy {
+// --- Physics-based spring strategy --- class PhysicsSpringStrategy( private val from: Float, private val to: Float, dampingRatio: Float, stiffness: Float, private val initialVelocity: Float, private val startDelayMs: Long, private val onUpdate: (() -> Unit)? = null, private val onStart: (() -> Unit)? = null, private val onEnd: (() -> Unit)? = null, private val onCancel: (() -> Unit)? = null ) : SpringStrategy {
 
 private val valueHolder = FloatValueHolder(from)
 private val springAnim = SpringAnimation(valueHolder)
-private val listeners = mutableListOf<Animator.AnimatorListener>()
 private var isRunning = false
 private var animatedValue: Float = from
 
@@ -23,7 +22,7 @@ init {
     }
     springAnim.addEndListener { _, _, _, _ ->
         isRunning = false
-        listeners.forEach { it.onAnimationEnd(springAnim) }
+        onEnd?.invoke()
     }
 }
 
@@ -32,25 +31,23 @@ override fun start() {
     val startAction = {
         valueHolder.value = from
         isRunning = true
-        listeners.forEach { it.onAnimationStart(springAnim) }
+        onStart?.invoke()
         springAnim.start()
     }
-    if (startDelay > 0) postFrameDelay(startDelay, startAction) else startAction()
+    if (startDelayMs > 0) postFrameDelay(startDelayMs, startAction) else startAction()
 }
 
 override fun cancel() {
     if (isRunning) {
         springAnim.cancel()
         isRunning = false
-        listeners.forEach { it.onAnimationCancel(springAnim) }
-        listeners.forEach { it.onAnimationEnd(springAnim) }
+        onCancel?.invoke()
+        onEnd?.invoke()
     }
 }
 
 override fun isRunning(): Boolean = isRunning
 override fun getAnimatedValue(): Float = animatedValue
-override fun addListener(listener: Animator.AnimatorListener) { listeners.add(listener) }
-override fun removeListener(listener: Animator.AnimatorListener) { listeners.remove(listener) }
 
 private fun postFrameDelay(delayMs: Long, block: () -> Unit) {
     val start = System.nanoTime()
@@ -63,10 +60,9 @@ private fun postFrameDelay(delayMs: Long, block: () -> Unit) {
 
 }
 
-// --- Interpolated spring strategy --- class InterpolatedSpringStrategy( private val from: Float, private val to: Float, private val duration: Long, private val startDelay: Long, private val dampingRatio: Float, private val stiffness: Float, private val onUpdate: (() -> Unit)? ) : SpringStrategy {
+// --- Interpolated spring strategy --- class InterpolatedSpringStrategy( private val from: Float, private val to: Float, private val durationMs: Long, private val startDelayMs: Long, private val dampingRatio: Float, private val stiffness: Float, private val onUpdate: (() -> Unit)? = null, private val onStart: (() -> Unit)? = null, private val onEnd: (() -> Unit)? = null, private val onCancel: (() -> Unit)? = null ) : SpringStrategy {
 
 private var animator: ValueAnimator? = null
-private val listeners = mutableListOf<Animator.AnimatorListener>()
 private var animatedValue: Float = from
 private var isRunning = false
 
@@ -74,28 +70,38 @@ override fun start() {
     if (isRunning) return
     animator = ValueAnimator.ofFloat(from, to).apply {
         interpolator = SpringInterpolator(dampingRatio, stiffness)
-        this.duration = this@InterpolatedSpringStrategy.duration
-        this.startDelay = this@InterpolatedSpringStrategy.startDelay
+        duration = durationMs
+        startDelay = startDelayMs
         addUpdateListener {
             animatedValue = it.animatedValue as Float
             onUpdate?.invoke()
         }
-        listeners.forEach { addListener(it) }
         addListener(object : Animator.AnimatorListener {
-            override fun onAnimationStart(animation: Animator) { isRunning = true }
-            override fun onAnimationEnd(animation: Animator) { isRunning = false }
-            override fun onAnimationCancel(animation: Animator) { isRunning = false }
+            override fun onAnimationStart(animation: Animator) {
+                isRunning = true
+                onStart?.invoke()
+            }
+            override fun onAnimationEnd(animation: Animator) {
+                isRunning = false
+                onEnd?.invoke()
+            }
+            override fun onAnimationCancel(animation: Animator) {
+                isRunning = false
+                onCancel?.invoke()
+                onEnd?.invoke()
+            }
             override fun onAnimationRepeat(animation: Animator) {}
         })
     }
     animator?.start()
 }
 
-override fun cancel() { animator?.cancel() }
+override fun cancel() {
+    animator?.cancel()
+}
+
 override fun isRunning(): Boolean = isRunning
 override fun getAnimatedValue(): Float = animatedValue
-override fun addListener(listener: Animator.AnimatorListener) { listeners.add(listener) }
-override fun removeListener(listener: Animator.AnimatorListener) { listeners.remove(listener) }
 
 }
 
@@ -122,26 +128,45 @@ override fun getInterpolator(): TimeInterpolator? = null // no-op
 
 override fun start() {
     strategy = createStrategy()
-    listeners.forEach { strategy?.addListener(it) }
     strategy?.start()
+    listeners.forEach { it.onAnimationStart(this) }
 }
 
 private fun createStrategy(): SpringStrategy {
+    val callbacks = Triple(
+        { listeners.forEach { it.onAnimationEnd(this) } },
+        { listeners.forEach { it.onAnimationCancel(this) } },
+        { onUpdate?.invoke(this) }
+    )
+
     return if (duration != null && duration != -1L) {
-        InterpolatedSpringStrategy(from, to, duration!!, startDelay, dampingRatio, stiffness, {
-            lastAnimatedValue = strategy?.getAnimatedValue() ?: lastAnimatedValue
-            onUpdate?.invoke(this)
-        })
+        InterpolatedSpringStrategy(from, to, duration!!, startDelay, dampingRatio, stiffness,
+            onUpdate = callbacks.third,
+            onStart = {},
+            onEnd = callbacks.first,
+            onCancel = callbacks.second
+        )
     } else {
-        PhysicsSpringStrategy(from, to, dampingRatio, stiffness, initialVelocity, startDelay, {
-            lastAnimatedValue = strategy?.getAnimatedValue() ?: lastAnimatedValue
-            onUpdate?.invoke(this)
-        })
+        PhysicsSpringStrategy(from, to, dampingRatio, stiffness, initialVelocity, startDelay,
+            onUpdate = callbacks.third,
+            onStart = {},
+            onEnd = callbacks.first,
+            onCancel = callbacks.second
+        )
     }
 }
 
-override fun cancel() { strategy?.cancel() }
-override fun end() { strategy?.cancel() }
+override fun cancel() {
+    strategy?.cancel()
+    listeners.forEach { it.onAnimationCancel(this) }
+    listeners.forEach { it.onAnimationEnd(this) }
+}
+
+override fun end() {
+    strategy?.cancel()
+    listeners.forEach { it.onAnimationEnd(this) }
+}
+
 override fun isRunning(): Boolean = strategy?.isRunning() ?: false
 fun getAnimatedValue(): Float = strategy?.getAnimatedValue() ?: lastAnimatedValue
 
