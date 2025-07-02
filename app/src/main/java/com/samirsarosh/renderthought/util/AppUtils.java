@@ -1,5 +1,4 @@
-
-    import android.animation.Animator import android.animation.ValueAnimator import android.view.Choreographer import android.view.animation.Interpolator import androidx.dynamicanimation.animation.SpringAnimation import androidx.dynamicanimation.animation.SpringForce import androidx.dynamicanimation.animation.FloatValueHolder import java.lang.ref.WeakReference
+import android.animation.Animator import android.animation.ValueAnimator import android.view.Choreographer import android.view.animation.Interpolator import androidx.dynamicanimation.animation.SpringAnimation import androidx.dynamicanimation.animation.SpringForce import androidx.dynamicanimation.animation.FloatValueHolder import java.lang.ref.WeakReference
 
 // --- Strategy interface --- interface SpringStrategy { fun start() fun cancel() fun isRunning(): Boolean fun getAnimatedValue(): Float fun addListener(listener: Animator.AnimatorListener) fun removeListener(listener: Animator.AnimatorListener) }
 
@@ -12,11 +11,12 @@ private var isRunning = false
 private var animatedValue: Float = from
 
 init {
-    springAnim.spring = SpringForce(to).apply {
+    springAnim.setStartVelocity(initialVelocity)
+    springAnim.spring = SpringForce().apply {
+        finalPosition = to
         this.dampingRatio = this@PhysicsSpringStrategy.dampingRatio
         this.stiffness = this@PhysicsSpringStrategy.stiffness
     }
-    springAnim.setStartVelocity(initialVelocity)
     springAnim.addUpdateListener { _, value, _ ->
         animatedValue = value
         onUpdate?.invoke(owner.get() ?: springAnim, value)
@@ -31,8 +31,6 @@ override fun start() {
     if (isRunning) return
     val startAction = {
         valueHolder.value = from
-        springAnim.spring.finalPosition = to
-        springAnim.cancel()
         isRunning = true
         listeners.forEach { it.onAnimationStart(owner.get() ?: springAnim) }
         springAnim.start()
@@ -148,6 +146,3 @@ fun getAnimatedValue(): Float = strategy?.getAnimatedValue() ?: lastAnimatedValu
 
 }
 
-
-
-    
