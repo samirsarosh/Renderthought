@@ -1,131 +1,131 @@
+// ---------- SpringConfig.kt
 
+data class SpringConfig( val from: Float, val to: Float, val duration: Long? = null, val dampingRatio: Float? = null, val stiffness: Float? = null, val initialVelocity: Float? = null, val startDelay: Long = 0L )
 
+// ---------- SpringStrategy.kt
+
+interface SpringStrategy { fun start() fun cancel() fun isRunning(): Boolean fun getAnimatedValue(): Float fun setUpdateListener(callback: (Float) -> Unit) fun addListener(listener: Animator.AnimatorListener) }
 
+// ---------- InterpolatedSpringStrategy.kt
 
+class InterpolatedSpringStrategy(private val config: SpringConfig) : SpringStrategy {
 
+private val animator: ValueAnimator = ValueAnimator.ofFloat(config.from, config.to).apply {
+    duration = config.duration ?: 300L
+    startDelay = config.startDelay
+    interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f)
+}
 
-Great question. Here's a clear and defensible explanation you can include in your RFC:
+private var animatedValue: Float = config.from
+private var updateCallback: ((Float) -> Unit)? = null
 
+init {
+    animator.addUpdateListener {
+        animatedValue = it.animatedValue as Float
+        updateCallback?.invoke(animatedValue)
+    }
+}
 
----
+override fun start() = animator.start()
+override fun cancel() = animator.cancel()
+override fun isRunning(): Boolean = animator.isRunning
+override fun getAnimatedValue(): Float = animatedValue
+override fun setUpdateListener(callback: (Float) -> Unit) { updateCallback = callback }
+override fun addListener(listener: Animator.AnimatorListener) { animator.addListener(listener) }
 
-🔀 Why Is Strategy Switching Required?
+}
 
-In animation systems like Bloks, spring motion serves two distinct UX goals:
+// ---------- PhysicsSpringStrategy.kt
 
+class PhysicsSpringStrategy(private val config: SpringConfig) : SpringStrategy {
 
----
+private val valueHolder = FloatValueHolder(config.from)
+private val springAnimation = SpringAnimation(valueHolder)
+private var updateCallback: ((Float) -> Unit)? = null
+private var startAction: (() -> Unit)? = null
 
-✅ 1. Physics-Based Spring (Dynamic, natural)
+init {
+    springAnimation.spring = SpringForce(config.to).apply {
+        stiffness = config.stiffness ?: SpringForce.STIFFNESS_MEDIUM
+        dampingRatio = config.dampingRatio ?: SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY
+    }
+    springAnimation.setStartVelocity(config.initialVelocity ?: 0f)
 
-Behaves like a real-world spring — bounces, settles based on stiffness, damping, and initial velocity.
+    springAnimation.addUpdateListener { _, value, _ ->
+        updateCallback?.invoke(value)
+    }
+}
 
-Timing is not fixed — animation duration adapts to the physics.
+override fun start() {
+    startAction = { springAnimation.start() }
 
-Ideal for gesture-driven interactions (e.g., swipe to dismiss, drag release, overscroll bounce).
+    if (config.startDelay > 0) {
+        Choreographer.getInstance().postFrameCallbackDelayed(
+            frameCallback, config.startDelay
+        )
+    } else {
+        startAction?.invoke()
+    }
+}
 
-Provides realism and responsiveness.
+private val frameCallback = Choreographer.FrameCallback {
+    startAction?.invoke()
+    startAction = null
+}
 
+override fun cancel() {
+    Choreographer.getInstance().removeFrameCallback(frameCallback)
+    springAnimation.cancel()
+    startAction = null
+}
 
-🧠 Problem: Since it has no fixed duration, it can’t be sequenced predictably with other animations (e.g., in an AnimatorSet).
+override fun isRunning(): Boolean = springAnimation.isRunning || startAction != null
+override fun getAnimatedValue(): Float = valueHolder.value
+override fun setUpdateListener(callback: (Float) -> Unit) { this.updateCallback = callback }
+override fun addListener(listener: Animator.AnimatorListener) { /* Not supported natively */ }
 
+}
 
----
+// ---------- SpringLikeAnimator.kt
 
-✅ 2. Duration-Based Spring (Deterministic, composable)
+class SpringLikeAnimator(private val strategy: SpringStrategy) : Animator() {
 
-Simulates spring-like behavior using a fixed duration and a custom interpolator (or dampingRatio).
+override fun start() = strategy.start()
+override fun cancel() = strategy.cancel()
+override fun isRunning(): Boolean = strategy.isRunning()
 
-Great for predefined UI transitions, like onboarding flows, reveal effects, or chained animations.
+fun getAnimatedValue(): Float = strategy.getAnimatedValue()
+fun addUpdateListener(callback: (Float) -> Unit) = strategy.setUpdateListener(callback)
 
-Ensures consistent timing and fits into existing animation sequencing models.
+override fun addListener(listener: Animator.AnimatorListener) = strategy.addListener(listener)
+override fun setInterpolator(interpolator: TimeInterpolator?) {}
+override fun getStartDelay(): Long = 0L
+override fun setStartDelay(startDelay: Long) {}
+override fun getDuration(): Long = 0L
+override fun setDuration(duration: Long) {}
 
+}
 
-🧠 Limitation: It’s not reactive — can’t respond naturally to gesture velocity or dynamic input.
+// ---------- SpringAnimatorFactory.kt
 
+fun createSpringAnimator(config: SpringConfig): SpringLikeAnimator { val strategy = if (config.duration != null) { InterpolatedSpringStrategy(config) } else { PhysicsSpringStrategy(config) } return SpringLikeAnimator(strategy) }
 
----
+// ---------- Usage.kt
 
-🎯 Why We Switch Based on duration
+fun useSpring(view: View) { val animator = createSpringAnimator( SpringConfig( from = 0f, to = 300f, duration = 500L, // Remove to switch to physics dampingRatio = 0.6f, stiffness = 500f, startDelay = 150L ) )
 
-To offer the best of both worlds in a single, unified API:
+animator.addUpdateListener { value ->
+    view.translationX = value
+}
 
-When duration is provided → we switch to timing-based strategy.
+animator.addListener(object : Animator.AnimatorListener {
+    override fun onAnimationStart(animation: Animator?) {}
+    override fun onAnimationEnd(animation: Animator?) {}
+    override fun onAnimationCancel(animation: Animator?) {}
+    override fun onAnimationRepeat(animation: Animator?) {}
+})
 
-When duration is absent → we use true physical spring motion.
+animator.start()
 
-
-This allows:
-
-Developers to choose style implicitly via config (e.g., duration).
-
-Cross-platform parity with React Native Reanimated and Framer Motion, which follow the same convention.
-
-Smooth integration with existing animation tooling like AnimatorSet, useAnimatedStyle, or Bloks’ sequencing engine.
-
-
-
----
-
-✅ In Summary:
-
-> The strategy switch is intentional and user-friendly: it empowers developers to control animation style using config, without changing APIs — enabling both interactive realism and predictable composition in one design.
-
-
-
-Let me know if you'd like this formalized into an RFC paragraph or turned into a diagram.
-
-
-
-
-
-
-
-
-
-
-
-
-
-Certainly — here’s a clear and concise version you can include under a “Proposal” or “Rationale” section of your RFC:
-
-
----
-
-✅ Proposal: Two-Strategy Spring Animator
-
-We propose implementing a unified SpringLikeAnimator that internally switches between two strategies based on the configuration:
-
-
----
-
-🔀 Why Two Strategies?
-
-✅ To support gesture-driven, physics-accurate animations (using stiffness, damping, velocity).
-
-✅ To support timed, sequenced animations that play well with AnimatorSet-style flows (via duration).
-
-✅ To maintain backward compatibility with existing Animator infrastructure (like Bloks or Jetpack).
-
-✅ To provide developer flexibility in a single API: config drives behavior.
-
-✅ To match behavior of React Native Reanimated v3 and Framer Motion, which switch spring behavior based on duration.
-
-
-
----
-
-🤖 Strategy Switching Logic
-
-If duration is provided → use InterpolatedSpringStrategy
-(Backed by ValueAnimator + springy interpolator. Deterministic and composable.)
-
-If duration is not provided → use PhysicsSpringStrategy
-(Backed by SpringAnimation. Physics-driven and responsive.)
-
-
-
----
-
-This design offers the flexibility of modern UX while ensuring technical integration with existing animation pipelines. Let me know if you'd like a diagram version of this too.
+}
 
