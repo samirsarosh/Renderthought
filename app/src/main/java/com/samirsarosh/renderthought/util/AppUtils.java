@@ -1,3 +1,114 @@
+
+// Shared abstraction for spring-based animations
+
+interface SpringAnimatable { fun getAnimatedValue(): Float fun isRunning(): Boolean fun cancel() fun setUpdateListener(callback: (Float) -> Unit) }
+
+// --- InterpolatedSpringAnimator.kt ---
+
+class InterpolatedSpringAnimator(private val config: SpringConfig) : ValueAnimator(), SpringAnimatable {
+
+private var updateCallback: ((Float) -> Unit)? = null
+
+init {
+    setFloatValues(config.from, config.to)
+    duration = config.duration ?: 300L
+    startDelay = config.startDelay
+    interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f)
+
+    addUpdateListener {
+        val value = it.animatedValue as Float
+        updateCallback?.invoke(value)
+    }
+}
+
+override fun getAnimatedValue(): Float = super.getAnimatedValue() as Float
+override fun isRunning(): Boolean = super.isRunning
+override fun cancel() = super.cancel()
+override fun setUpdateListener(callback: (Float) -> Unit) {
+    updateCallback = callback
+}
+
+}
+
+// --- PhysicsSpringAnimator.kt ---
+
+class PhysicsSpringAnimator(private val config: SpringConfig) : Animator(), SpringAnimatable {
+
+private val valueHolder = FloatValueHolder(config.from)
+private val springAnimation = SpringAnimation(valueHolder)
+private var updateCallback: ((Float) -> Unit)? = null
+private var startAction: (() -> Unit)? = null
+
+init {
+    springAnimation.spring = SpringForce(config.to).apply {
+        stiffness = config.stiffness ?: SpringForce.STIFFNESS_MEDIUM
+        dampingRatio = config.dampingRatio ?: SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY
+    }
+    springAnimation.setStartVelocity(config.initialVelocity ?: 0f)
+
+    springAnimation.addUpdateListener { _, value, _ ->
+        updateCallback?.invoke(value)
+    }
+}
+
+override fun start() {
+    startAction = { springAnimation.start() }
+    if (config.startDelay > 0) {
+        Choreographer.getInstance().postFrameCallbackDelayed(
+            frameCallback, config.startDelay
+        )
+    } else {
+        startAction?.invoke()
+    }
+}
+
+private val frameCallback = Choreographer.FrameCallback {
+    startAction?.invoke()
+    startAction = null
+}
+
+override fun cancel() {
+    Choreographer.getInstance().removeFrameCallback(frameCallback)
+    springAnimation.cancel()
+    startAction = null
+}
+
+override fun isRunning(): Boolean = springAnimation.isRunning || startAction != null
+override fun getAnimatedValue(): Float = valueHolder.value
+override fun setUpdateListener(callback: (Float) -> Unit) {
+    this.updateCallback = callback
+}
+
+override fun addListener(listener: Animator.AnimatorListener) {}
+override fun setInterpolator(interpolator: TimeInterpolator?) {}
+override fun getStartDelay(): Long = config.startDelay
+override fun setStartDelay(startDelay: Long) {}
+override fun getDuration(): Long = 0L
+override fun setDuration(duration: Long): Animator = this
+
+}
+
+// Usage (in client code) fun useAnimation(animator: Animator) { (animator as? SpringAnimatable)?.setUpdateListener { value -> // Do something with animated value }
+
+animator.start()
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ---------- SpringConfig.kt
 
 data class SpringConfig( val from: Float, val to: Float, val duration: Long? = null, val dampingRatio: Float? = null, val stiffness: Float? = null, val initialVelocity: Float? = null, val startDelay: Long = 0L )
